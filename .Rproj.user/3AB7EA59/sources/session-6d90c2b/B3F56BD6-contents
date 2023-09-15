@@ -1,0 +1,19 @@
+saveDataEmargement <- function(data) {
+  emargement <- read.csv(file = paste0(getwd(),"/data/emargement/emargement.csv"),header=TRUE,sep=";")  %>%
+    mutate(Naissance = as.Date(as.integer(Naissance),origin="1970-01-01"))
+  data <- data %>% as.list() %>% data.frame() 
+  emargement <- rbind(data,emargement)
+  #write_csv(emargement,"data/emargement/emargement.csv",sep=";")
+}
+
+loadDataEmargement <- function() {
+  emargement <- read.csv(file = paste0(getwd(),"/data/emargement/emargement.csv"),header=TRUE,sep=";") %>%
+    mutate(Naissance = as.Date(as.integer(Naissance),origin="1970-01-01"))
+  read.csv(file = paste0(getwd(),"/data/emargement/emargement.csv"),header=TRUE,sep=";") %>%
+    mutate(Naissance = as.Date(as.integer(Naissance),origin="1970-01-01"))
+}
+
+
+emargement <- read.csv(file = paste0(getwd(),"/data/emargement/emargement.csv"),header=TRUE,sep=";")  %>%
+  mutate(Naissance = as.Date(as.integer(Naissance),origin="1970-01-01"))
+

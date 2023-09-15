@@ -1,0 +1,54 @@
+library(plumber)
+library(RPostgreSQL)
+
+db <- 'bdd_democratie'  #provide the name of your db
+host_db <- 'BDD_DEMOCRATIE' #i.e. # i.e. 'ec2-54-83-201-96.compute-1.amazonaws.com'  
+db_port <- '5432'  # or any other port specified by the DBA
+db_user <- "postgres"  
+db_password <- 'postgres'
+option <- "-c search_path=constitution"
+
+con <- dbConnect(RPostgres::Postgres(), dbname = db, host=host_db, port=db_port, user=db_user, password=db_password,options=option) 
+
+#* @apiTitle API EMARGEMENT CONSTITUTION
+#* @apiDescription Récupérer les informations d'émargements pour le projet de développement collaboratif d'une Constitution
+
+#* Récupération des données d'émargement
+#* @get /emargement
+function() {
+  dbGetQuery(con, "SELECT * FROM emargement")
+}
+
+
+#* @param Mail Exemple : quentin.gollentzoutlook.com 
+#* @param Nom Exemple : GOLLENTZ
+#* @param Prenom Exemple : QUENTIN
+#* @param Departement Exemple : HAUT-RHIN
+#* @param Naissance Exemple : 1994-07-25
+#* @param Parti Exemple : NI
+#* @param Identifiant Exemple : qsddzad
+#* @param Date Exemple : 2023-07-13 18:30:59.362
+
+#* Insertion des données d'émargement
+#* @post /emargement
+function(Mail, Nom,Prenom,Departement,Naissance,Parti,Identifiant,Date) {
+  dbSendQuery(
+    con, 
+    "INSERT INTO constitution.emargement
+(\"Mail\", \"Nom\", \"Prenom\", \"Departement\", \"Naissance\", \"Parti\", \"Identifiant\", \"Date\")
+VALUES($1, $2, $3, $4, $5, $6, $7, $8);",
+    list(
+      Mail,
+      Nom,
+      Prenom,
+      Departement,
+      Naissance,
+      Parti,
+      Identifiant,
+      Date
+    )
+  )
+  dbGetQuery(con, "SELECT * FROM emargement")
+  
+}
+

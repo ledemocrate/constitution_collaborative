@@ -1,0 +1,65 @@
+library(httr)
+library(jsonlite)
+options(stringsAsFactors = FALSE)
+# url for local testing
+url <- "http://192.168.1.21:8312"
+# url
+# set API path
+path <- 'emargement'
+# send POST Request to API
+raw.result <- GET(url = url, path = path)
+# check status code
+raw.result$status_code
+# retrieve transformed example stock data
+data  <- fromJSON(rawToChar(raw.result$content))
+
+library(plumber)
+library(RPostgreSQL)
+
+db <- 'bdd_democratie'  #provide the name of your db
+host_db <- 'BDD_DEMOCRATIE' #i.e. # i.e. 'ec2-54-83-201-96.compute-1.amazonaws.com'  
+db_port <- '5432'  # or any other port specified by the DBA
+db_user <- "postgres"  
+db_password <- 'postgres'
+option <- "-c search_path=constitution"
+
+con <- dbConnect(RPostgres::Postgres(), dbname = db, host=host_db, port=db_port, user=db_user, password=db_password,options=option) 
+
+test <- as.list(emargement[1,])
+test$Naissance
+test$Naissance <- as.Date(as.integer(test$Naissance),origin="1970-01-01") 
+  as.list()  
+body <- list(
+  .data = .data,
+  .trans = "w",
+  .key = "stock",
+  .value = "price",
+  .select = c("X","Y","Z")
+)
+# set API path
+path <- 'widelong'
+# send POST Request to API
+raw.result <- POST(url = url_api, path = path_api_emargement, body = test, encode = 'json')
+# check status code
+raw.result$status_code
+# retrieve transformed example stock data
+.t_data <- fromJSON(rawToChar(raw.result$content))
+
+
+dbSendQuery(
+  con, 
+  "INSERT INTO constitution.emargement
+(\"Mail\", \"Nom\", \"Prenom\", \"Departement\", \"Naissance\", \"Parti\", \"Identifiant\", \"Date\")
+VALUES($1, $2, $3, $4, $5, $6, $7, $8);",
+  list(
+    'quentin.gollentz@outlook.com',
+    'GOLLENTZ',
+    'QUENTIN',
+    'HAUT-RHIN',
+    '1994-07-25',
+    'NI',
+    'qsddzad',
+    '2023-07-13 18:30:59.362'
+  )
+)
+VALUES('quentin.gollentz@outlook.com', 'GOLLENTZ', 'QUENTIN', 'HAUT-RHIN', '1994-07-25', 'NI', 'qsddzad', '2023-07-13 18:30:59.362');

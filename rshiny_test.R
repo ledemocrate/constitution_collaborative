@@ -1,0 +1,444 @@
+#install.packages("reactable")
+library(emayili)
+
+library(readtext)
+library(tidyverse)
+library(lubridate)
+library(readxl)
+library(readr)
+library(writexl)
+library(data.table)
+
+
+library(rhandsontable)
+library(shiny)
+library(shinyjs)
+library(shinyFiles)
+library(shinyvalidate)
+library(reactable)
+library(shinythemes)
+library(shinyAce)
+
+
+library(httr)
+library(jsonlite)
+
+library(openssl)
+library(sodium)
+
+library(markdown)
+library(knitr)
+
+options(encoding="UTF-8")
+options(stringsAsFactors = FALSE)
+
+`%nin%` = Negate(`%in%`)
+
+#smtp <- server(
+# host = "smtp.gmail.com",
+#port = 465,
+#username = "ledemocratealsacien@gmail.com",
+#password = "rsraqiozwscmdaqc"
+#)
+
+url_api_emargement <- "http://192.168.1.21:8000"
+path_api_emargement <- 'emargement'
+
+url_api_data_democratie <- "http://192.168.1.21:8001"
+path_api_departement <- 'departement'
+path_api_parti_liste <- 'parti_liste'
+
+raw.result <- GET(url = url_api_emargement, path = path_api_emargement)
+emargement  <- fromJSON(rawToChar(raw.result$content))
+
+raw.result <- GET(url = url_api_data_democratie, path = path_api_departement)
+departement  <- fromJSON(rawToChar(raw.result$content))
+
+raw.result <- GET(url = url_api_data_democratie, path = path_api_parti_liste)
+parti_liste  <- fromJSON(rawToChar(raw.result$content)) %>%
+  rename(Parti=groupeAbrev)
+
+constitution_reference <- read.csv(file = paste0(getwd(),"/data/CONSTITUTION_REFERENCE.csv"),header=TRUE)
+
+choices <- list.files(paste0(getwd(),"/data"),pattern="*.csv")
+
+init <- "### Sample knitr Doc
+
+This is some markdown text. It may also have embedded R code
+which will be executed.
+
+```{r}
+2*3
+rnorm(5)
+```
+
+It can even include graphical elements.
+
+```{r}
+hist(rnorm(100))
+```
+"
+
+groupe_image <- data.frame(
+  Parti = parti_liste,
+  Flag = c('<img src="https://fr.wikipedia.org/wiki/Fichier:Les_Patriotes_2018.png" height="52"></img>',
+           '<img src="https://upload.wikimedia.org/wikipedia/fr/thumb/f/fd/Ps-france-2016.svg/langfr-200px-Ps-france-2016.svg.png" height="52"></img>',
+           '<img src="https://www.eelv.fr/files/2020/03/LOGO_EELV_BLANC-1024x547.jpg" height="52"></img>',
+           '<img src="https://upload.wikimedia.org/wikipedia/fr/7/76/LOGO-GRS-169.jpg" height="52"></img>',
+           '<img src="http://www.retroskatestickers.com/gal/independent/img/classic.jpg" height="52"></img>',
+           '<img src="https://www.france-politique.fr/logos/em-2017.png" height="52"></img>',
+           '<img src="https://www.les4verites.com/wp-content/uploads/2017/11/logo-lr.png" height="52"></img>',
+           '<img src="https://upload.wikimedia.org/wikipedia/commons/9/94/MoDem_logo.svg" height="52"></img>',
+           '<img src="https://www.joshthedesigner.com/wp-content/uploads/bfi_thumb/Horizon-Logo-Final-1-n3m28zqd4ylaq5twj9ogo25g6qxjmmnypivn6izpow.jpg" height="52"></img>',
+           '<img src="https://upload.wikimedia.org/wikipedia/fr/thumb/3/3c/Parti-radical_2021.png/640px-Parti-radical_2021.png" height="52"></img>',
+           '<img src="https://logos-marques.com/wp-content/uploads/2020/04/Le-Rassemblement-national-RN-logo.png" height="52"></img>'
+  )
+)
+
+
+loadDataEmargement <- function() {
+  raw.result <- GET(url = url_api_emargement, path = path_api_emargement)
+  as.data.frame(fromJSON(rawToChar(raw.result$content)))
+}
+
+saveDataEmargement <- function(data) {
+  data <- data %>%
+    as.list() 
+  data$Naissance <- as.Date(as.integer(data$Naissance),origin="1970-01-01") 
+  raw.result <- POST(url = url_api_emargement, path = path_api_emargement, body = as.list(data), encode = 'json')
+  as.data.frame(fromJSON(rawToChar(raw.result$content)))
+  
+}
+
+isValidEmail <- function(x) {
+  grepl("\\<[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\>", as.character(x), ignore.case=TRUE)
+}
+mail_unique <- function() {
+  compose_rules(
+    ~ if (sum(loadDataEmargement()$Mail==str_trim(.)) > 0) "Cette adresse mail est déjà associée à un identifiant"
+  )
+}
+majorite <- function() {
+  compose_rules(
+    ~ if (year(Sys.Date())-year(as.Date(.,origin="1970-01-01")) < 18) "Vous n'êtes pas en maturité pour prendre une décision de vote"
+  )
+}
+
+
+appCSS <-
+  ".mandatory_star { color: red; }
+   .shiny-input-container { margin-top: 25px; }
+   #submit_msg { margin-left: 15px; }
+   #error { color: red; }
+   body { background: #fcfcfc; }
+   #header { background: #fff; border-bottom: 1px solid #ddd; margin: -20px -15px 0; padding: 15px 15px 10px; }
+  "
+
+# CSS to use in the app
+button_color_css <- 
+  "#DivCompClear, #FinderClear, #EnterTimes{
+  /* Change the background color of the update button
+  to blue. */
+  background: DodgerBlue;
+  /* Change the text size to 15 pixels. */
+  font-size: 15px;}
+"
+
+labelMandatory <- function(label) {
+  tagList(
+    label,
+    span("*", class = "mandatory_star")
+  )
+}
+
+fieldsRedaction <- c("constit_name")
+fieldsRedactionEmargement <- c("constit_name")
+
+fieldsChoix <- c("constit_name_bis")
+fieldsMandatoryChoix <- c("constit_name_bis")
+
+fieldsEmargement <- c("Mail","Nom","Prenom","Departement","Naissance","Parti")
+fieldsMandatoryEmargement <- c("Mail","Nom","Prenom","Departement","Parti")
+
+
+ui <- shinyUI(fluidPage(
+    shinyjs::useShinyjs(),
+    shinyjs::inlineCSS(appCSS),
+    navbarPage("Outil d'élaboration collaboratif de la Constitution", theme = shinytheme("lumen"),
+               tags$style(button_color_css),
+               tabPanel("Inscription", fluid = TRUE, icon = icon("id-card"),
+                        sidebarLayout(
+                          sidebarPanel(
+                            titlePanel("Identification"),
+                            textInput("Mail", labelMandatory("Mail"), ""),
+                            textInput("Nom", labelMandatory("Nom"), ""),
+                            textInput("Prenom", labelMandatory("Prenom"), ""),
+                            dateInput("Naissance","Naissance :",format ="yyyy-mm-dd",value = "1994-07-25"),
+                            selectInput("Departement", labelMandatory("Departement"),departement),
+                            selectInput("Parti", labelMandatory("Parti"),parti_liste),
+                            actionButton("submit_emargement", "Inscription", class = "btn-primary")),
+                          mainPanel(                          
+                            h3("Presentation"),
+                            uiOutput('presentation', width = "600px"),
+                            h3("Tableau des députés"),
+                            DT::dataTableOutput("responses_bis", width = 600), tags$hr()))),
+               tabPanel("Redaction", fluid = TRUE, icon = icon("pen-nib"),
+                        sidebarLayout(
+                          sidebarPanel(
+                            titlePanel("De la rédaction de la Constitution"),
+                            textInput("constit_redacteur", labelMandatory("Identifiant"), ""),
+                            textInput("constit_name", labelMandatory("Nom de la Constitution"), ""),
+                            actionButton("save_constit", "Publication", class = "btn-primary")),
+                          mainPanel(                          
+                            h3("Presentation"),
+                            tags$style('#myid * { word-wrap: break-word; color: black }'),  # apply styling to children of myid
+                            div(id='myid', rHandsontableOutput('hot')),
+                            fluidRow(
+                              column(
+                                6,
+                                h4("Source R-Markdown"),
+                                aceEditor("rmd", mode = "markdown", value = init),
+                                actionButton("eval", "Update")
+                              ),
+                              column(
+                                6,
+                                h4("Knitted Output"),
+                                htmlOutput("knitDoc")
+                              )),
+                            tags$hr()))),
+               tabPanel("Choix", fluid = TRUE, icon = icon("check-to-slot"),
+                        sidebarLayout(
+                          sidebarPanel(
+                            titlePanel("Du choix de la Constitution"),
+                            selectInput("constit_name_bis", labelMandatory("Choix d'une constitution"), choices),
+                            actionButton("save_constit_bis", "Choix", class = "btn-primary"),
+                            textInput("constit_votant", labelMandatory("Identifiant"), ""),
+                            selectInput("Vote", labelMandatory("Avis"),
+                                        c("Favorable" = TRUE,
+                                          "Défavorable" = FALSE,
+                                          "Pas d'avis" = NA)),
+                            actionButton("save_constit_bis", "Vote", class = "btn-primary")),
+                          mainPanel(                          
+                            h3("Presentation"),
+                            reactableOutput("hot_bis"),
+                            tags$hr()))),
+               tabPanel("Resultat", fluid = TRUE, icon = icon("chart-simple"))
+               
+)))
+  
+server <- shinyServer(function(input, output) {
+    # PARTIE INSCRIPTION
+  
+  output$presentation <- renderUI({HTML(markdown::markdownToHTML(knit("data/presentation/presentation.rmd",quiet = TRUE)))})
+  output$responses_bis <- DT::renderDataTable({
+    DT::datatable(loadDataEmargement() %>%
+                    inner_join(groupe_image,by="Parti") %>%
+                    select(Nom,Prenom,Departement,Parti,Naissance,Date,Flag) %>%
+                    group_by(Parti,Flag)%>%
+                    summarise(`Nombre de représentant`=n()),escape=FALSE)
+  })
+  
+  iv <- InputValidator$new()
+  iv$add_rule("Mail", sv_required())
+  iv$add_rule("Mail", sv_email())
+  iv$add_rule("Mail", mail_unique())
+  iv$add_rule("Naissance", majorite())
+  iv$add_rule("Naissance", sv_required())
+  iv$add_rule("Departement", sv_required())
+  
+  iv$enable()
+  
+  observe({
+    mandatoryFilledEmargement <-
+      vapply(fieldsMandatoryEmargement,
+             function(x) {
+               !is.null(input[[x]]) && input[[x]] != ""
+             },
+             logical(1))
+    if(sum(loadDataEmargement()$Mail==str_trim(input$Mail)) == 0 && isValidEmail(input$Mail)) {
+      mandatoryFilledEmargement[1] <- TRUE
+    } else {
+      mandatoryFilledEmargement[1] <- FALSE
+    }
+    if(year(Sys.Date())-year(input$Naissance) > 17) {
+      mandatoryFilledEmargement[5] <- TRUE
+    } else {
+      mandatoryFilledEmargement[5] <- FALSE
+    }
+    mandatoryFilledEmargement <- all(mandatoryFilledEmargement)
+    
+    # En fonction des conditions necessaire on active le bouton submit ou pas
+    shinyjs::toggleState(id = "submit_emargement", condition = mandatoryFilledEmargement)
+  })
+  
+  formData_Emargement <- reactive({
+    data <- c(sapply(fieldsEmargement, function(x) input[[x]]),
+              bin2hex(hash(charToRaw(input$Mail))),as.character(Sys.time()))
+    names(data)[7] <- "Identifiant"
+    names(data)[8] <- "Date"
+    data
+  })
+  
+  
+  observeEvent(input$submit_emargement, {
+    saveDataEmargement(formData_Emargement())
+    
+    iv <- InputValidator$new()
+    iv$add_rule("Mail", sv_required())
+    iv$add_rule("Mail", sv_email())
+    iv$add_rule("Mail", mail_unique())
+    iv$add_rule("Naissance", majorite())
+    iv$add_rule("Naissance", sv_required())
+    iv$add_rule("Departement", sv_required())
+    
+    iv$enable()
+    
+    observe({
+      mandatoryFilledEmargement <-
+        vapply(fieldsMandatoryEmargement,
+               function(x) {
+                 !is.null(input[[x]]) && input[[x]] != ""
+               },
+               logical(1))
+      if(sum(loadDataEmargement()$Mail==str_trim(input$Mail)) == 0 && isValidEmail(input$Mail)) {
+        mandatoryFilledEmargement[1] <- TRUE
+      } else {
+        mandatoryFilledEmargement[1] <- FALSE
+      }
+      if(year(Sys.Date())-year(input$Naissance) > 17) {
+        mandatoryFilledEmargement[5] <- TRUE
+      } else {
+        mandatoryFilledEmargement[5] <- FALSE
+      }
+      mandatoryFilledEmargement <- all(mandatoryFilledEmargement)
+      
+      # En fonction des conditions necessaire on active le bouton submit ou pas
+      shinyjs::toggleState(id = "submit_emargement", condition = mandatoryFilledEmargement)
+    })
+    #email <- envelope(
+    # to = input$Mail,
+    #from = "ledemocratealsacien@gmail.com",
+    #subject = "Token d'authentification du bureau de vote en ligne",
+    #text = paste0("Vous trouverez ci-joint le code vous permettant de voter :", bin2hex(hash(charToRaw(input$Mail)))))
+    
+    #smtp(email, verbose = TRUE)
+    
+    output$responses_bis <- DT::renderDataTable({
+      DT::datatable(loadDataEmargement() %>%
+                      inner_join(groupe_image,by="Parti") %>%
+                      select(Nom,Prenom,Departement,Parti,Naissance,Date,Flag) %>%
+                      group_by(Parti,Flag)%>%
+                      summarise(`Nombre de représentant`=n()),escape=FALSE)
+    })})
+    
+
+  
+  
+  
+  
+  
+    # PARTIE REDACTION
+  
+  output$knitDoc <-   renderUI({
+    input$eval
+
+    HTML(markdown::markdownToHTML(knit(text = isolate(input$rmd),quiet = TRUE)))})
+  
+    observe({
+      mandatoryFilledRedaction <-
+        vapply(fieldsRedaction,
+               function(x) {
+                 !is.null(input[[x]]) && input[[x]] != ""
+               },
+               logical(1))
+    
+      mandatoryFilledRedaction <- all(mandatoryFilledRedaction)
+      
+      # En fonction des conditions necessaire on active le bouton submit ou pas
+      shinyjs::toggleState(id = "save_constit", condition = mandatoryFilledRedaction)
+    })
+    
+    DF <- data.frame(Groupe = "Choix d'un groupe auquel se rattache les articles", Intitulé = "Texte libre",
+                     stringsAsFactors = FALSE) 
+    
+    values <- reactiveValues()
+    
+    ## Handsontable
+    observe({
+      if (!is.null(input$hot)) {
+        DF = hot_to_r(input$hot)
+      } else {
+        if (is.null(values[["DF"]]))
+          DF <- DF
+        else
+          DF <- values[["DF"]]
+      }
+      values[["DF"]] <- DF
+    })
+    
+    output$hot <- renderRHandsontable({
+      DF <- values[["DF"]]
+      if (!is.null(DF))
+        rhandsontable(DF, useTypes = TRUE, stretchH = "all")  %>%
+        hot_cols(colWidths = c(100, 50, 50),
+                 manualColumnMove = FALSE,
+                 manualColumnResize = TRUE
+                 ##, wordWrap = "yes please"
+        ) %>%
+        hot_rows(rowHeights = NULL ) %>% #default
+        hot_context_menu(allowRowEdit = TRUE, allowColEdit = FALSE)
+    })
+    
+    ## Save 
+    observeEvent(input$save_constit, {
+      finalDF <- isolate(values[["DF"]])
+      write.csv(finalDF, file=file.path(paste0(getwd(),"/data"),  paste0(input$constit_name,".csv")))
+      choices <- list.files(paste0(getwd(),"/data"))
+      knit(text = isolate(input$rmd),quiet = TRUE,output=paste0(getwd(),"/data/",input$constit_name,".html"))
+    })
+    
+  
+  # PARTIE CHOIX
+  
+  observe({
+    mandatoryFilledChoix <-
+      vapply(fieldsMandatoryChoix,
+             function(x) {
+               !is.null(input[[x]]) && input[[x]] != ""
+             },
+             logical(1))
+    
+    mandatoryFilledChoix <- all(mandatoryFilledChoix)
+    
+    # En fonction des conditions necessaire on active le bouton submit ou pas
+    shinyjs::toggleState(id = "save_constit_bis", condition = mandatoryFilledChoix)
+  })
+  
+  
+  constitution_reference_FUNCTION <- reactive(
+    {constitution_reference <- read.csv(file = paste0(getwd(),"/data/",input$constit_name_bis),header=TRUE)
+    
+    })
+  
+  
+  observeEvent(input$save_constit_bis, {
+
+    constitution_reference <- read.csv(file = paste0(getwd(),"/data/",input$constit_name_bis),header=TRUE)%>%
+      rename(`Numéro de l'article`=X)
+    output$hot_bis <-  renderReactable({
+      reactable(constitution_reference,
+                groupBy = "Groupe",
+                selection = "multiple",
+                borderless = TRUE,
+                onClick = "select",
+                rowStyle = JS("function(rowInfo) {
+    if (rowInfo && rowInfo.selected) {
+      return { backgroundColor: '#eee', boxShadow: 'inset 2px 0 0 0 #ffa62d' }
+    }
+  }"))})})
+
+})
+  
+
+
+shinyApp(ui, server)
